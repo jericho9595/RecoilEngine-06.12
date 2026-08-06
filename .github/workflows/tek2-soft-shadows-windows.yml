@@ -1,0 +1,59 @@
+name: TEK2 Soft Shadows Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - agent/tek2-soft-shadows-2026-06-12
+    paths:
+      - "tek2-soft-shadows/**"
+      - ".github/workflows/tek2-soft-shadows-windows.yml"
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  build-windows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout exact branch
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Confirm Recoil base version
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD 2026.06.12)" = "$(git rev-parse 2026.06.12)"
+          echo "Base tag: $(git rev-parse --short 2026.06.12)"
+
+      - name: Apply TEK2 soft-shadow patch
+        run: python3 tek2-soft-shadows/apply_patch.py
+
+      - name: Build Windows amd64 engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x docker-build-v2/build.sh
+          ./docker-build-v2/build.sh --arch amd64 --jobs 4 windows
+
+      - name: Package ready-to-use engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d build-amd64-windows/install
+          cd build-amd64-windows/install
+          zip -r9 "${GITHUB_WORKSPACE}/RecoilEngine-2026.06.12-TEK2-SoftShadows-Windows.zip" .
+
+      - name: Upload Windows engine ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: RecoilEngine-2026.06.12-TEK2-SoftShadows-Windows
+          path: RecoilEngine-2026.06.12-TEK2-SoftShadows-Windows.zip
+          if-no-files-found: error
+          retention-days: 14
