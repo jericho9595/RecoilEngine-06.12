@@ -24,13 +24,16 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
+          fetch-tags: true
 
       - name: Confirm Recoil base version
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git merge-base HEAD 2026.06.12)" = "$(git rev-parse 2026.06.12)"
-          echo "Base tag: $(git rev-parse --short 2026.06.12)"
+          git fetch --force --tags origin
+          BASE_COMMIT="$(git rev-parse '2026.06.12^{commit}')"
+          git merge-base --is-ancestor "$BASE_COMMIT" HEAD
+          echo "Verified Recoil 2026.06.12 base commit: ${BASE_COMMIT:0:12}"
 
       - name: Apply TEK2 soft-shadow patch
         run: python3 tek2-soft-shadows/apply_patch.py
