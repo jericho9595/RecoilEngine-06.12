@@ -38,8 +38,27 @@ jobs:
       - name: Apply TEK2 soft-shadow patch
         run: python3 tek2-soft-shadows/apply_patch.py
 
+      - name: Prepare non-interactive Docker build
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("docker-build-v2/build.sh")
+          text = path.read_text(encoding="utf-8")
+          old = "$RUNTIME run --platform=linux/$ARCH -it --rm \\\n"
+          new = "$RUNTIME run --platform=linux/$ARCH --rm \\\n"
+          if old not in text:
+              raise SystemExit("Could not locate Docker TTY flags in build.sh")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          print("Disabled Docker interactive TTY flags for GitHub Actions")
+          PY
+
       - name: Build Windows amd64 engine
         shell: bash
+        env:
+          CI: "true"
         run: |
           set -euo pipefail
           chmod +x docker-build-v2/build.sh
