@@ -1,0 +1,86 @@
+name: TEK2 SSAO Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - agent/tek2-ssao-2026-06-12
+    paths:
+      - "tek2-ssao/**"
+      - ".github/workflows/tek2-ssao-windows.yml"
+  pull_request:
+    paths:
+      - "tek2-ssao/**"
+      - ".github/workflows/tek2-ssao-windows.yml"
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  build-windows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout exact branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          submodules: recursive
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Confirm Recoil base version
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --force --tags origin
+          BASE_COMMIT="$(git rev-parse '2026.06.12^{commit}')"
+          git merge-base --is-ancestor "$BASE_COMMIT" HEAD
+          echo "Verified Recoil 2026.06.12 base commit: ${BASE_COMMIT:0:12}"
+
+      - name: Apply TEK2 SSAO patch
+        run: python3 tek2-ssao/apply_patch.py
+
+      - name: Prepare non-interactive Docker build
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("docker-build-v2/build.sh")
+          text = path.read_text(encoding="utf-8")
+          old = "$RUNTIME run --platform=linux/$ARCH -it --rm \\\n"
+          new = "$RUNTIME run --platform=linux/$ARCH --rm \\\n"
+          if old not in text:
+              raise SystemExit("Could not locate Docker TTY flags in build.sh")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          print("Disabled Docker interactive TTY flags for GitHub Actions")
+          PY
+
+      - name: Build Windows amd64 engine
+        shell: bash
+        env:
+          CI: "true"
+        run: |
+          set -euo pipefail
+          chmod +x docker-build-v2/build.sh
+          ./docker-build-v2/build.sh --arch amd64 --jobs 4 windows
+
+      - name: Package ready-to-use engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d build-amd64-windows/install
+          cd build-amd64-windows/install
+          zip -r9 "${GITHUB_WORKSPACE}/RecoilEngine-2026.06.12-TEK2-SSAO-Windows.zip" .
+
+      - name: Upload Windows engine ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: RecoilEngine-2026.06.12-TEK2-SSAO-Windows
+          path: RecoilEngine-2026.06.12-TEK2-SSAO-Windows.zip
+          if-no-files-found: error
+          retention-days: 14
