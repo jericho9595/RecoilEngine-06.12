@@ -43,6 +43,47 @@ jobs:
       - name: Apply TEK2 soft-shadow patch
         run: python3 tek2-soft-shadows/apply_patch.py
 
+      - name: Make PCSS sampler code headless-safe
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("rts/Rendering/ShadowHandler.cpp")
+          text = path.read_text(encoding="utf-8")
+
+          def replace_once(old, new):
+              global text
+              n = text.count(old)
+              if n != 1:
+                  raise SystemExit(f"Expected exactly one headless anchor, found {n}")
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              "\tif (shadowDepthRawSampler != 0) {\n\t\tglDeleteSamplers(1, &shadowDepthRawSampler);\n\t\tshadowDepthRawSampler = 0;\n\t}\n",
+              "#ifndef HEADLESS\n\tif (shadowDepthRawSampler != 0) {\n\t\tglDeleteSamplers(1, &shadowDepthRawSampler);\n\t\tshadowDepthRawSampler = 0;\n\t}\n#else\n\tshadowDepthRawSampler = 0;\n#endif\n"
+          )
+
+          replace_once(
+              "\tif (status && globalRendering->haveGL4) {\n\t\tif (shadowDepthRawSampler != 0)\n\t\t\tglDeleteSamplers(1, &shadowDepthRawSampler);\n\n\t\tglGenSamplers(1, &shadowDepthRawSampler);\n\t\tglSamplerParameterfv(shadowDepthRawSampler, GL_TEXTURE_BORDER_COLOR, one);\n\t\tglSamplerParameteri(shadowDepthRawSampler, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);\n\t\tglSamplerParameteri(shadowDepthRawSampler, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);\n\t\tglSamplerParameteri(shadowDepthRawSampler, GL_TEXTURE_MIN_FILTER, GL_NEAREST);\n\t\tglSamplerParameteri(shadowDepthRawSampler, GL_TEXTURE_MAG_FILTER, GL_NEAREST);\n\t\tglSamplerParameteri(shadowDepthRawSampler, GL_TEXTURE_COMPARE_MODE, GL_NONE);\n\t}\n",
+              "#ifndef HEADLESS\n\tif (status && globalRendering->haveGL4) {\n\t\tif (shadowDepthRawSampler != 0)\n\t\t\tglDeleteSamplers(1, &shadowDepthRawSampler);\n\n\t\tglGenSamplers(1, &shadowDepthRawSampler);\n\t\tglSamplerParameterfv(shadowDepthRawSampler, GL_TEXTURE_BORDER_COLOR, one);\n\t\tglSamplerParameteri(shadowDepthRawSampler, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);\n\t\tglSamplerParameteri(shadowDepthRawSampler, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);\n\t\tglSamplerParameteri(shadowDepthRawSampler, GL_TEXTURE_MIN_FILTER, GL_NEAREST);\n\t\tglSamplerParameteri(shadowDepthRawSampler, GL_TEXTURE_MAG_FILTER, GL_NEAREST);\n\t\tglSamplerParameteri(shadowDepthRawSampler, GL_TEXTURE_COMPARE_MODE, GL_NONE);\n\t}\n#endif\n"
+          )
+
+          replace_once(
+              "void CShadowHandler::SetupShadowDepthRawSampler(unsigned int texUnit, bool enable) const\n{\n\tif (shadowDepthRawSampler == 0)\n\t\treturn;\n\n\tglActiveTexture(texUnit);\n\tglBindTexture(GL_TEXTURE_2D, shadowDepthTexture);\n\tglBindSampler(texUnit - GL_TEXTURE0, shadowDepthRawSampler);\n\n\tif (enable)\n\t\tglEnable(GL_TEXTURE_2D);\n}\n",
+              "void CShadowHandler::SetupShadowDepthRawSampler(unsigned int texUnit, bool enable) const\n{\n#ifndef HEADLESS\n\tif (shadowDepthRawSampler == 0)\n\t\treturn;\n\n\tglActiveTexture(texUnit);\n\tglBindTexture(GL_TEXTURE_2D, shadowDepthTexture);\n\tglBindSampler(texUnit - GL_TEXTURE0, shadowDepthRawSampler);\n\n\tif (enable)\n\t\tglEnable(GL_TEXTURE_2D);\n#else\n\t(void)texUnit;\n\t(void)enable;\n#endif\n}\n"
+          )
+
+          replace_once(
+              "void CShadowHandler::ResetShadowDepthRawSampler(unsigned int texUnit, bool disable) const\n{\n\tif (shadowDepthRawSampler == 0)\n\t\treturn;\n\n\tglActiveTexture(texUnit);\n\tglBindSampler(texUnit - GL_TEXTURE0, 0);\n\tglBindTexture(GL_TEXTURE_2D, 0);\n\n\tif (disable)\n\t\tglDisable(GL_TEXTURE_2D);\n}\n",
+              "void CShadowHandler::ResetShadowDepthRawSampler(unsigned int texUnit, bool disable) const\n{\n#ifndef HEADLESS\n\tif (shadowDepthRawSampler == 0)\n\t\treturn;\n\n\tglActiveTexture(texUnit);\n\tglBindSampler(texUnit - GL_TEXTURE0, 0);\n\tglBindTexture(GL_TEXTURE_2D, 0);\n\n\tif (disable)\n\t\tglDisable(GL_TEXTURE_2D);\n#else\n\t(void)texUnit;\n\t(void)disable;\n#endif\n}\n"
+          )
+
+          path.write_text(text, encoding="utf-8", newline="\n")
+          print("Guarded PCSS sampler-object calls from HEADLESS")
+          PY
+
       - name: Prepare non-interactive Docker build
         shell: bash
         run: |
