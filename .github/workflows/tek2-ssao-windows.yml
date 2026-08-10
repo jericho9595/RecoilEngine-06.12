@@ -43,6 +43,9 @@ jobs:
       - name: Apply TEK2 SSAO patch
         run: python3 tek2-ssao/apply_patch.py
 
+      - name: Apply SSAO depth-copy fix
+        run: python3 tek2-ssao/apply_depth_copy_fix.py
+
       - name: Prepare non-interactive Docker build
         shell: bash
         run: |
