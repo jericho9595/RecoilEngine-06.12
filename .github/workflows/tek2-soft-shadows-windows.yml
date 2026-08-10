@@ -43,6 +43,9 @@ jobs:
       - name: Apply TEK2 soft-shadow patch
         run: python3 tek2-soft-shadows/apply_patch.py
 
+      - name: Apply PCSS V3 resolution tuning
+        run: python3 tek2-soft-shadows/apply_pcss_tuning.py
+
       - name: Make PCSS sampler code headless-safe
         shell: bash
         run: |
